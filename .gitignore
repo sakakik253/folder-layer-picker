@@ -1,0 +1,25 @@
+# ログファイル
+*.log
+
+# バックアップフォルダ
+*_backup_*/
+
+# PowerShell関連
+*.ps1~
+
+# Windows関連
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# 一時ファイル
+*.tmp
+*.temp
+
+# Visual Studio Code
+.vscode/
+*.code-workspace
+
+# その他
+.DS_Store
+
