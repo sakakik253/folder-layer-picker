@@ -100,6 +100,104 @@ powershell -ExecutionPolicy Bypass -File .\folder-layer-picker.ps1
 - バックアップ機能を有効にすることを推奨します
 - 重要なデータは事前に別途バックアップを取ってください
 
+## トラブルシューティング
+
+### スクリプトの実行ポリシーエラー
+
+```powershell
+# 実行ポリシーを一時的に変更して起動
+powershell -ExecutionPolicy Bypass -File .\folder-layer-picker.ps1
+```
+
+### XAMLファイルが見つからないエラー
+
+- `MainWindow.xaml` と `folder-layer-picker.ps1` が同じフォルダにあることを確認してください
+
+### 権限エラー
+
+- 管理者権限でPowerShellを起動してください
+- 対象フォルダへのアクセス権限を確認してください
+
+### 文字化けが発生する場合
+
+- スクリプトファイルはUTF-8で保存されています
+- PowerShellのコンソール出力でのみ文字化けが発生する場合がありますが、UIとログファイルは正常に動作します
+
+## 技術詳細
+
+### アーキテクチャ
+
+- **UI**: WPF (XAML) - Windows Presentation Foundation
+- **ロジック**: PowerShell 5.1+
+- **設計パターン**: イベント駆動型
+
+### 主要関数
+
+- `Get-FolderHierarchy`: フォルダ構造をスキャンして階層別に分類
+- `Get-PreviewData`: 移動予測データを生成（名前衝突チェック含む）
+- `Move-FoldersToRoot`: フォルダをルート直下に移動
+- `Remove-EmptyFolders`: 空フォルダを再帰的に削除
+- `New-Backup`: バックアップを作成
+- `Restore-FromBackup`: バックアップから復元
+
+### ファイル構成
+
+```
+folder-layer-picker/
+├── folder-layer-picker.ps1    # メインスクリプト (PowerShell)
+├── MainWindow.xaml            # UI定義 (XAML)
+├── README.md                  # このファイル
+├── .gitignore                 # Git除外設定
+└── folder-layer-picker_*.log  # ログファイル (自動生成)
+```
+
+## 開発情報
+
+### 開発環境
+
+- Windows 10/11
+- PowerShell 5.1以降
+- Visual Studio Code (推奨エディタ)
+
+### テスト
+
+実際のフォルダで実行する前に、テスト用のフォルダ構造を作成してテストすることを推奨します。
+
+```powershell
+# テスト用フォルダ構造の作成例
+$testRoot = "C:\Test\FolderTest"
+New-Item -Path "$testRoot\第1章\1.1節\資料" -ItemType Directory -Force
+New-Item -Path "$testRoot\第1章\1.2節\データ" -ItemType Directory -Force
+New-Item -Path "$testRoot\第2章\2.1節\画像" -ItemType Directory -Force
+New-Item -Path "$testRoot\第2章\2.2節\文書" -ItemType Directory -Force
+
+# ダミーファイルの作成
+"test" | Out-File "$testRoot\第1章\1.1節\資料\test.txt"
+"test" | Out-File "$testRoot\第2章\2.1節\画像\image.txt"
+```
+
+## よくある質問 (FAQ)
+
+### Q: 処理を実行した後、元に戻せますか？
+
+A: はい。「バックアップを作成する」オプションを有効にしていれば、「元に戻す」ボタンで復元できます。
+
+### Q: 複数の階層を同時に選択できますか？
+
+A: いいえ。このツールは一度に1つの階層のみを処理します。複数の階層を処理したい場合は、何度か実行してください。
+
+### Q: ファイルも移動されますか？
+
+A: いいえ。このツールはフォルダのみを移動します。ファイルは親フォルダと共に移動します。
+
+### Q: 階層0とは何ですか？
+
+A: ルートフォルダ直下のフォルダです。階層1は、階層0のフォルダ内のフォルダです。
+
+### Q: バックアップはどこに作成されますか？
+
+A: 対象フォルダと同じ親フォルダ内に、`{フォルダ名}_backup_{タイムスタンプ}` という名前で作成されます。
+
 ## ライセンス
 
 MIT License
