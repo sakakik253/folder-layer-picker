@@ -86,6 +86,313 @@ function Initialize-LogFile {
 }
 
 # ================================================================================
+# エクスポート機能
+# ================================================================================
+
+function Get-FolderDetails {
+    <#
+    .SYNOPSIS
+        フォルダの詳細情報を取得する
+    #>
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$FolderPath
+    )
+    
+    try {
+        $files = Get-ChildItem -LiteralPath $FolderPath -File -ErrorAction SilentlyContinue
+        $subfolders = Get-ChildItem -LiteralPath $FolderPath -Directory -ErrorAction SilentlyContinue
+        
+        $fileCount = $files.Count
+        $subfolderCount = $subfolders.Count
+        
+        # ファイルサイズの合計
+        $totalSize = ($files | Measure-Object -Property Length -Sum).Sum
+        if (-not $totalSize) { $totalSize = 0 }
+        
+        # 最終更新日時
+        $lastModified = $null
+        if ($files.Count -gt 0) {
+            $lastModified = ($files | Sort-Object LastWriteTime -Descending | Select-Object -First 1).LastWriteTime
+        }
+        if ($subfolders.Count -gt 0) {
+            $folderModified = ($subfolders | Sort-Object LastWriteTime -Descending | Select-Object -First 1).LastWriteTime
+            if (-not $lastModified -or ($folderModified -gt $lastModified)) {
+                $lastModified = $folderModified
+            }
+        }
+        
+        # 拡張子別ファイル数
+        $extensionStats = @{}
+        foreach ($file in $files) {
+            $ext = $file.Extension.ToLower()
+            if (-not $ext) { $ext = "(なし)" }
+            if (-not $extensionStats.ContainsKey($ext)) {
+                $extensionStats[$ext] = 0
+            }
+            $extensionStats[$ext]++
+        }
+        
+        return @{
+            FileCount = $fileCount
+            SubfolderCount = $subfolderCount
+            TotalSize = $totalSize
+            LastModified = $lastModified
+            ExtensionStats = $extensionStats
+            IsEmpty = ($fileCount -eq 0 -and $subfolderCount -eq 0)
+        }
+    }
+    catch {
+        return @{
+            FileCount = 0
+            SubfolderCount = 0
+            TotalSize = 0
+            LastModified = $null
+            ExtensionStats = @{}
+            IsEmpty = $true
+        }
+    }
+}
+
+function Export-AnalysisToText {
+    <#
+    .SYNOPSIS
+        分析結果をテキスト形式でエクスポート
+    #>
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$RootPath,
+        
+        [Parameter(Mandatory=$true)]
+        [hashtable]$HierarchyData,
+        
+        [Parameter(Mandatory=$true)]
+        [string]$OutputPath
+    )
+    
+    Write-Log "テキスト形式でエクスポート開始: $OutputPath"
+    
+    try {
+        $output = @()
+        
+        # ヘッダー
+        $output += "=" * 80
+        $output += "フォルダ階層構造 分析結果"
+        $output += "対象フォルダ: $RootPath"
+        $output += "分析日時: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+        
+        # 統計情報の計算
+        $totalFolders = ($HierarchyData.Values | ForEach-Object { $_.Count } | Measure-Object -Sum).Sum
+        $maxLevel = ($HierarchyData.Keys | Measure-Object -Maximum).Maximum
+        
+        # ルート配下の全ファイル数とサイズ
+        $allFiles = Get-ChildItem -LiteralPath $RootPath -File -Recurse -ErrorAction SilentlyContinue
+        $totalFiles = $allFiles.Count
+        $totalSize = ($allFiles | Measure-Object -Property Length -Sum).Sum
+        if (-not $totalSize) { $totalSize = 0 }
+        $totalSizeGB = [math]::Round($totalSize / 1GB, 2)
+        
+        # 空フォルダ数
+        $emptyFolders = 0
+        Get-ChildItem -LiteralPath $RootPath -Directory -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
+            $items = Get-ChildItem -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue
+            if ($items.Count -eq 0) { $emptyFolders++ }
+        }
+        
+        $output += "最大階層: $maxLevel 階層"
+        $output += "総フォルダ数: $totalFolders 個"
+        $output += "総ファイル数: $totalFiles 個"
+        $output += "総サイズ: $totalSizeGB GB"
+        $output += "空フォルダ数: $emptyFolders 個"
+        $output += ""
+        $output += "階層別統計:"
+        
+        $sortedLevels = $HierarchyData.Keys | Sort-Object
+        foreach ($level in $sortedLevels) {
+            $count = $HierarchyData[$level].Count
+            $levelFiles = 0
+            foreach ($folder in $HierarchyData[$level].Folders) {
+                $details = Get-FolderDetails -FolderPath $folder.FullPath
+                $levelFiles += $details.FileCount
+            }
+            $output += "  $level 階層目: $count フォルダ ($levelFiles ファイル)"
+        }
+        
+        $output += "=" * 80
+        $output += "詳細構造"
+        $output += ""
+        
+        # ツリー構造を生成
+        $rootFolders = Get-ChildItem -LiteralPath $RootPath -Directory -ErrorAction SilentlyContinue
+        foreach ($folder in $rootFolders) {
+            $output += Build-FolderTree -FolderPath $folder.FullName -Prefix "" -IsLast $false -Level 1
+        }
+        
+        # ファイルに出力
+        $output | Out-File -FilePath $OutputPath -Encoding UTF8
+        
+        Write-Log "テキストエクスポート完了: $OutputPath" -Level SUCCESS
+        return $true
+    }
+    catch {
+        Write-Log "テキストエクスポートエラー: $_" -Level ERROR
+        return $false
+    }
+}
+
+function Build-FolderTree {
+    <#
+    .SYNOPSIS
+        フォルダツリー構造を再帰的に構築
+    #>
+    param(
+        [string]$FolderPath,
+        [string]$Prefix,
+        [bool]$IsLast,
+        [int]$Level
+    )
+    
+    $output = @()
+    
+    try {
+        $folderName = Split-Path $FolderPath -Leaf
+        $details = Get-FolderDetails -FolderPath $FolderPath
+        
+        # サイズをMB単位で表示
+        $sizeMB = [math]::Round($details.TotalSize / 1MB, 2)
+        
+        # 拡張子統計
+        $extStr = ""
+        if ($details.ExtensionStats.Count -gt 0) {
+            $extArray = $details.ExtensionStats.GetEnumerator() | ForEach-Object { "$($_.Key)($($_.Value))" }
+            $extStr = "拡張子: " + ($extArray -join ", ")
+        }
+        
+        # 最終更新日時
+        $modifiedStr = if ($details.LastModified) { $details.LastModified.ToString("yyyy-MM-dd") } else { "不明" }
+        
+        # ツリー記号
+        $connector = if ($IsLast) { "└──" } else { "├──" }
+        
+        # フォルダ情報行
+        $info = "$folderName\ (ファイル: $($details.FileCount), サイズ: $sizeMB MB, 更新: $modifiedStr)"
+        $output += "$Prefix$connector $info"
+        
+        # 拡張子情報（ファイルがある場合）
+        if ($extStr) {
+            $extPrefix = if ($IsLast) { "    " } else { "│   " }
+            $output += "$Prefix$extPrefix    $extStr"
+        }
+        
+        # サブフォルダを処理
+        $subfolders = Get-ChildItem -LiteralPath $FolderPath -Directory -ErrorAction SilentlyContinue
+        if ($subfolders.Count -gt 0) {
+            $newPrefix = $Prefix + (if ($IsLast) { "    " } else { "│   " })
+            
+            for ($i = 0; $i -lt $subfolders.Count; $i++) {
+                $isLastSub = ($i -eq ($subfolders.Count - 1))
+                $output += Build-FolderTree -FolderPath $subfolders[$i].FullName -Prefix $newPrefix -IsLast $isLastSub -Level ($Level + 1)
+            }
+        }
+    }
+    catch {
+        $output += "$Prefix$connector [エラー: アクセスできません]"
+    }
+    
+    return $output
+}
+
+function Export-AnalysisToCSV {
+    <#
+    .SYNOPSIS
+        分析結果をCSV形式でエクスポート
+    #>
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$RootPath,
+        
+        [Parameter(Mandatory=$true)]
+        [hashtable]$HierarchyData,
+        
+        [Parameter(Mandatory=$true)]
+        [string]$OutputPath
+    )
+    
+    Write-Log "CSV形式でエクスポート開始: $OutputPath"
+    
+    try {
+        $csvData = @()
+        
+        # ヘッダー
+        $csvData += [PSCustomObject]@{
+            "階層レベル" = "階層レベル"
+            "フォルダ名" = "フォルダ名"
+            "フルパス" = "フルパス"
+            "ファイル数" = "ファイル数"
+            "サブフォルダ数" = "サブフォルダ数"
+            "フォルダサイズ(MB)" = "フォルダサイズ(MB)"
+            "最終更新日時" = "最終更新日時"
+            "空フォルダ" = "空フォルダ"
+            "拡張子別ファイル数" = "拡張子別ファイル数"
+        }
+        
+        # 階層順にデータを構築
+        $sortedLevels = $HierarchyData.Keys | Sort-Object
+        foreach ($level in $sortedLevels) {
+            foreach ($folder in $HierarchyData[$level].Folders) {
+                $details = Get-FolderDetails -FolderPath $folder.FullPath
+                
+                # インデント（階層-1 × 2文字）
+                $indent = "  " * ($level - 1)
+                $folderName = $indent + $folder.Name
+                
+                # サイズをMB単位
+                $sizeMB = [math]::Round($details.TotalSize / 1MB, 2)
+                
+                # 拡張子統計
+                $extStr = ""
+                if ($details.ExtensionStats.Count -gt 0) {
+                    $extArray = $details.ExtensionStats.GetEnumerator() | ForEach-Object { "$($_.Key)($($_.Value))" }
+                    $extStr = $extArray -join ", "
+                }
+                
+                # 最終更新日時
+                $modifiedStr = if ($details.LastModified) { 
+                    $details.LastModified.ToString("yyyy-MM-dd HH:mm:ss") 
+                } else { 
+                    "" 
+                }
+                
+                # 空フォルダ判定
+                $isEmpty = if ($details.IsEmpty) { "はい" } else { "いいえ" }
+                
+                $csvData += [PSCustomObject]@{
+                    "階層レベル" = $level
+                    "フォルダ名" = $folderName
+                    "フルパス" = $folder.FullPath
+                    "ファイル数" = $details.FileCount
+                    "サブフォルダ数" = $details.SubfolderCount
+                    "フォルダサイズ(MB)" = $sizeMB
+                    "最終更新日時" = $modifiedStr
+                    "空フォルダ" = $isEmpty
+                    "拡張子別ファイル数" = $extStr
+                }
+            }
+        }
+        
+        # CSVに出力
+        $csvData | Export-Csv -Path $OutputPath -NoTypeInformation -Encoding UTF8
+        
+        Write-Log "CSVエクスポート完了: $OutputPath" -Level SUCCESS
+        return $true
+    }
+    catch {
+        Write-Log "CSVエクスポートエラー: $_" -Level ERROR
+        return $false
+    }
+}
+
+# ================================================================================
 # 階層分析機能
 # ================================================================================
 
@@ -983,6 +1290,7 @@ try {
     $txtFolderPath = $window.FindName("txtFolderPath")
     $btnBrowse = $window.FindName("btnBrowse")
     $btnAnalyze = $window.FindName("btnAnalyze")
+    $btnExportAnalysis = $window.FindName("btnExportAnalysis")
     $txtAnalysisStatus = $window.FindName("txtAnalysisStatus")
     
     # 操作モード関連
@@ -1096,6 +1404,53 @@ try {
         }
     })
     
+    # エクスポートボタン
+    $btnExportAnalysis.Add_Click({
+        try {
+            if (-not $script:HierarchyData -or $script:HierarchyData.Count -eq 0) {
+                [System.Windows.MessageBox]::Show("先に分析を実行してください。", "確認", "OK", "Warning")
+                return
+            }
+            
+            $txtStatusBar.Text = "分析結果をエクスポートしています..."
+            
+            # 出力ファイル名の生成
+            $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+            $parentPath = Split-Path $script:RootPath -Parent
+            $txtPath = Join-Path $parentPath "分析結果_$timestamp.txt"
+            $csvPath = Join-Path $parentPath "分析結果_$timestamp.csv"
+            
+            # テキスト形式でエクスポート
+            $txtSuccess = Export-AnalysisToText -RootPath $script:RootPath -HierarchyData $script:HierarchyData -OutputPath $txtPath
+            
+            # CSV形式でエクスポート
+            $csvSuccess = Export-AnalysisToCSV -RootPath $script:RootPath -HierarchyData $script:HierarchyData -OutputPath $csvPath
+            
+            if ($txtSuccess -and $csvSuccess) {
+                $txtStatusBar.Text = "エクスポート完了"
+                $message = "分析結果をエクスポートしました。`n`n" +
+                           "テキスト: $txtPath`n" +
+                           "CSV: $csvPath`n`n" +
+                           "エクスプローラーで開きますか？"
+                
+                $result = [System.Windows.MessageBox]::Show($message, "エクスポート完了", "YesNo", "Information")
+                
+                if ($result -eq "Yes") {
+                    explorer.exe "/select,$txtPath"
+                }
+            }
+            else {
+                $txtStatusBar.Text = "エクスポートエラー"
+                [System.Windows.MessageBox]::Show("エクスポート中にエラーが発生しました。`nログファイルを確認してください。", "エラー", "OK", "Error")
+            }
+        }
+        catch {
+            Write-Log "エクスポートエラー: $_" -Level ERROR
+            $txtStatusBar.Text = "エクスポートエラー"
+            [System.Windows.MessageBox]::Show("エクスポート中にエラーが発生しました:`n$_", "エラー", "OK", "Error")
+        }
+    })
+    
     # 分析ボタン
     $btnAnalyze.Add_Click({
         try {
@@ -1127,6 +1482,9 @@ try {
             
             # 自動プレビュー更新を有効化
             $script:AutoPreviewEnabled = $true
+            
+            # エクスポートボタンを有効化
+            $btnExportAnalysis.IsEnabled = $true
             
             Write-Log "階層分析完了: $maxLevel 階層" -Level SUCCESS
         }

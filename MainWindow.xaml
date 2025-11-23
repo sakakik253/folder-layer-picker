@@ -27,11 +27,22 @@
 
         <!-- セクション2: 階層構造の分析 -->
         <GroupBox Header="階層構造の分析" Grid.Row="1" Margin="0,0,0,10" Padding="10">
-            <StackPanel>
-                <Button Name="btnAnalyze" Content="分析" Width="100" Height="30" HorizontalAlignment="Left" Margin="0,0,0,10"/>
-                <TextBlock Name="txtAnalysisStatus" Text="フォルダを選択して「分析」ボタンをクリックしてください。" 
-                           Foreground="Gray" Margin="0,0,0,5"/>
-            </StackPanel>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                
+                <StackPanel Grid.Column="0">
+                    <Button Name="btnAnalyze" Content="分析" Width="100" Height="30" HorizontalAlignment="Left" Margin="0,0,0,10"/>
+                    <TextBlock Name="txtAnalysisStatus" Text="フォルダを選択して「分析」ボタンをクリックしてください。" 
+                               Foreground="Gray" Margin="0,0,0,5"/>
+                </StackPanel>
+                
+                <Button Name="btnExportAnalysis" Content="分析結果をエクスポート" Width="160" Height="30" 
+                        Grid.Column="1" IsEnabled="False" VerticalAlignment="Top"
+                        ToolTip="テキストとCSV形式で分析結果を出力します"/>
+            </Grid>
         </GroupBox>
 
         <!-- セクション3: 操作設定と階層選択 -->
