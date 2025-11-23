@@ -239,65 +239,64 @@ function Get-PreviewData {
         }
         
         $targetFolders = $allTargetFolders
+        
+        # ルート直下の既存フォルダ名を取得
+        $existingNames = @{}
+        Get-ChildItem -LiteralPath $RootPath -Directory | ForEach-Object {
+            $existingNames[$_.Name.ToLower()] = $true
+        }
+        
+        foreach ($folder in $targetFolders) {
+            $originalName = $folder.Name
+            $newName = $originalName
             
-            # ルート直下の既存フォルダ名を取得
-            $existingNames = @{}
-            Get-ChildItem -LiteralPath $RootPath -Directory | ForEach-Object {
-                $existingNames[$_.Name.ToLower()] = $true
+            # 親パスがある場合（ルート直下でない場合）
+            if ($folder.Parent) {
+                # 親パスをプレフィックスとして追加
+                $parentPrefix = $folder.Parent -replace '\\', '_'
+                $newName = "${parentPrefix}_${originalName}"
             }
             
-            foreach ($folder in $targetFolders) {
-                $originalName = $folder.Name
-                $newName = $originalName
-                
-                # 親パスがある場合（ルート直下でない場合）
-                if ($folder.Parent) {
-                    # 親パスをプレフィックスとして追加
-                    $parentPrefix = $folder.Parent -replace '\\', '_'
-                    $newName = "${parentPrefix}_${originalName}"
-                }
-                
-                # 同名チェック
-                $finalName = $newName
-                $counter = 1
-                while ($existingNames.ContainsKey($finalName.ToLower())) {
-                    $finalName = "${newName}_$counter"
-                    $counter++
-                }
-                
-                # 移動操作を記録
-                $moveOp = @{
-                    SourcePath = $folder.FullPath
-                    DestinationName = $finalName
-                    DestinationPath = Join-Path $RootPath $finalName
-                    OriginalName = $originalName
-                    WasRenamed = ($finalName -ne $originalName)
-                }
-                
-                $previewData.MoveOperations += $moveOp
-                $existingNames[$finalName.ToLower()] = $true
-                
-                if ($moveOp.WasRenamed) {
-                    $previewData.Warnings += "名前変更: '$originalName' → '$finalName'"
-                }
+            # 同名チェック
+            $finalName = $newName
+            $counter = 1
+            while ($existingNames.ContainsKey($finalName.ToLower())) {
+                $finalName = "${newName}_$counter"
+                $counter++
             }
             
-            # 移動後に空になるフォルダを予測
-            $allAffectedPaths = @{}
-            foreach ($moveOp in $previewData.MoveOperations) {
-                $parentPath = Split-Path $moveOp.SourcePath -Parent
-                while ($parentPath -and $parentPath -ne $RootPath) {
-                    $allAffectedPaths[$parentPath] = $true
-                    $parentPath = Split-Path $parentPath -Parent
-                }
+            # 移動操作を記録
+            $moveOp = @{
+                SourcePath = $folder.FullPath
+                DestinationName = $finalName
+                DestinationPath = Join-Path $RootPath $finalName
+                OriginalName = $originalName
+                WasRenamed = ($finalName -ne $originalName)
             }
             
-            # 各フォルダについて、移動後も内容が残るかチェック
-            foreach ($path in $allAffectedPaths.Keys) {
-                $willBeEmpty = Test-WillBeEmptyAfterMove -FolderPath $path -MoveOperations $previewData.MoveOperations
-                if ($willBeEmpty) {
-                    $previewData.EmptyFoldersToDelete += $path
-                }
+            $previewData.MoveOperations += $moveOp
+            $existingNames[$finalName.ToLower()] = $true
+            
+            if ($moveOp.WasRenamed) {
+                $previewData.Warnings += "名前変更: '$originalName' → '$finalName'"
+            }
+        }
+        
+        # 移動後に空になるフォルダを予測
+        $allAffectedPaths = @{}
+        foreach ($moveOp in $previewData.MoveOperations) {
+            $parentPath = Split-Path $moveOp.SourcePath -Parent
+            while ($parentPath -and $parentPath -ne $RootPath) {
+                $allAffectedPaths[$parentPath] = $true
+                $parentPath = Split-Path $parentPath -Parent
+            }
+        }
+            
+        # 各フォルダについて、移動後も内容が残るかチェック
+        foreach ($path in $allAffectedPaths.Keys) {
+            $willBeEmpty = Test-WillBeEmptyAfterMove -FolderPath $path -MoveOperations $previewData.MoveOperations
+            if ($willBeEmpty) {
+                $previewData.EmptyFoldersToDelete += $path
             }
         }
         
