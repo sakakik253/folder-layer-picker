@@ -63,15 +63,15 @@
                 <!-- 階層選択エリア -->
                 <Grid Grid.Row="1" Margin="0,0,0,10">
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="300"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
                     
                     <!-- 左側: 移動する階層 -->
-                    <StackPanel Grid.Column="0" Margin="0,0,5,0">
+                    <StackPanel Grid.Column="0" Margin="0,0,10,0">
                         <TextBlock Name="lblMoveLayersTitle" Text="移動する階層を選択（複数可）:" FontWeight="Bold" Margin="0,0,0,5"/>
-                        <Border BorderBrush="LightGray" BorderThickness="1" Padding="5" Background="White" MinHeight="120">
-                            <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="150">
+                        <Border BorderBrush="LightGray" BorderThickness="1" Padding="5" Background="White" MinHeight="100">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="130">
                                 <StackPanel Name="pnlMoveLayerSelection">
                                     <TextBlock Text="（分析後に表示されます）" Foreground="Gray"/>
                                 </StackPanel>
@@ -79,51 +79,31 @@
                         </Border>
                         
                         <!-- 移動先選択 -->
-                        <StackPanel Name="pnlMoveDestination" Margin="0,10,0,0" Visibility="Collapsed">
-                            <TextBlock Text="移動先:" FontWeight="Bold" Margin="0,0,0,5"/>
+                        <StackPanel Name="pnlMoveDestination" Margin="0,8,0,0" Visibility="Collapsed">
+                            <TextBlock Text="移動先:" FontWeight="Bold" Margin="0,0,0,3"/>
                             <RadioButton Name="rdoMoveToRoot" Content="ルート直下に移動" GroupName="MoveDestination" 
-                                         IsChecked="True" Margin="5,0,0,3"/>
+                                         IsChecked="True" Margin="5,0,0,2"/>
                             <RadioButton Name="rdoMoveToParent" Content="1階層上に移動" GroupName="MoveDestination" 
+                                         Margin="5,0,0,0"/>
+                        </StackPanel>
+                        
+                        <!-- 削除オプション（カスタムモード時のみ） -->
+                        <StackPanel Name="pnlDeleteOptions" Margin="0,8,0,0" Visibility="Collapsed">
+                            <TextBlock Text="削除オプション:" FontWeight="Bold" Margin="0,0,0,3"/>
+                            <RadioButton Name="rdoDeleteAllEmpty" Content="すべての空フォルダ" GroupName="DeleteRange" 
+                                         IsChecked="True" Margin="5,0,0,2"/>
+                            <RadioButton Name="rdoDeleteSelectedOnly" Content="選択階層のみ" GroupName="DeleteRange" 
+                                         Margin="5,0,0,2"/>
+                            <RadioButton Name="rdoNoDelete" Content="削除しない" GroupName="DeleteRange" 
                                          Margin="5,0,0,0"/>
                         </StackPanel>
                     </StackPanel>
                     
-                    <!-- 右側: 削除オプション（カスタムモード時のみ） -->
-                    <StackPanel Grid.Column="1" Name="pnlDeleteOptions" Margin="5,0,0,0" Visibility="Collapsed">
-                        <TextBlock Text="削除オプション:" FontWeight="Bold" Margin="0,0,0,5"/>
-                        <Border BorderBrush="LightGray" BorderThickness="1" Padding="5" Background="White">
+                    <!-- 右側: プレビュー要約 -->
+                    <StackPanel Grid.Column="1">
+                        <TextBlock Text="実行後の予測:" FontWeight="Bold" Margin="0,0,0,5"/>
+                        <Border BorderBrush="LightGray" BorderThickness="1" Padding="10" Background="#F5F5F5" MinHeight="80">
                             <StackPanel>
-                                <TextBlock Text="空フォルダの削除範囲:" FontSize="11" Margin="0,0,0,5"/>
-                                <RadioButton Name="rdoDeleteAllEmpty" Content="すべての空フォルダ" GroupName="DeleteRange" 
-                                             IsChecked="True" Margin="5,0,0,3"/>
-                                <RadioButton Name="rdoDeleteSelectedOnly" Content="選択階層のみ" GroupName="DeleteRange" 
-                                             Margin="5,0,0,3"/>
-                                <RadioButton Name="rdoNoDelete" Content="削除しない" GroupName="DeleteRange" 
-                                             Margin="5,0,0,5"/>
-                            </StackPanel>
-                        </Border>
-                    </StackPanel>
-                </Grid>
-                
-                <!-- プレビューボタンと結果表示 -->
-                <Grid Grid.Row="2">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                    </Grid.RowDefinitions>
-                    
-                    <Grid Grid.Row="0" Margin="0,0,0,5">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-                        
-                        <Button Name="btnUpdatePreview" Content="プレビュー更新" Width="120" Height="30" 
-                                Grid.Column="0" IsEnabled="False" Margin="0,0,10,0"/>
-                        
-                        <Border Grid.Column="1" BorderBrush="LightGray" BorderThickness="1" Padding="10" Background="#F5F5F5" MinHeight="100">
-                            <StackPanel>
-                                <TextBlock Text="実行後の予測:" FontWeight="Bold" Margin="0,0,0,5"/>
                                 <TextBlock Name="txtPreviewMoveCount" Text="移動されるフォルダ数: -" 
                                            Margin="0,0,0,3" TextWrapping="Wrap"/>
                                 <TextBlock Name="txtPreviewDeleteCount" Text="削除される空フォルダ数: -" 
@@ -132,15 +112,20 @@
                                            Foreground="Gray" FontStyle="Italic" Margin="0,3,0,0" TextWrapping="Wrap"/>
                             </StackPanel>
                         </Border>
-                    </Grid>
-                    
-                    <!-- プレビュー詳細 -->
-                    <GroupBox Header="プレビュー詳細" Grid.Row="1" Margin="0,5,0,0" Padding="5">
-                        <TextBox Name="txtPreviewDetails" IsReadOnly="True" VerticalScrollBarVisibility="Auto" 
-                                 HorizontalScrollBarVisibility="Auto" FontFamily="Consolas" FontSize="10"
-                                 Text="プレビューを更新すると、ここに詳細が表示されます。"/>
-                    </GroupBox>
+                        <Button Name="btnUpdatePreview" Content="プレビュー更新" Width="120" Height="28" 
+                                IsEnabled="False" Margin="0,8,0,0" HorizontalAlignment="Left"/>
+                    </StackPanel>
                 </Grid>
+                
+                <!-- プレビュー詳細（全幅） -->
+                <GroupBox Header="プレビュー詳細" Grid.Row="2" Padding="5">
+                    <TextBox Name="txtPreviewDetails" IsReadOnly="True" 
+                             VerticalScrollBarVisibility="Auto" 
+                             HorizontalScrollBarVisibility="Auto" 
+                             FontFamily="Consolas" FontSize="10"
+                             Text="プレビューを更新すると、ここに詳細が表示されます。"
+                             MinHeight="150"/>
+                </GroupBox>
             </Grid>
         </GroupBox>
 
