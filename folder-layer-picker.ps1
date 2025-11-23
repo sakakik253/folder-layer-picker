@@ -201,9 +201,26 @@ function Get-PreviewData {
     try {
         # 削除のみモードの場合、移動操作は実行しない
         if ($OperationMode -eq "DeleteOnly") {
-            Write-Log "削除のみモード: 移動操作はスキップ"
-            # 空フォルダの検出のみ実行
-            # （後で実装）
+            Write-Log "削除のみモード: 選択した階層のフォルダを削除"
+            
+            # 選択した階層のフォルダを削除対象として記録
+            $foldersToDelete = @()
+            foreach ($targetLevel in $TargetLevels) {
+                if ($HierarchyData.ContainsKey($targetLevel)) {
+                    foreach ($folder in $HierarchyData[$targetLevel].Folders) {
+                        $foldersToDelete += @{
+                            Path = $folder.FullPath
+                            Level = $targetLevel
+                            Name = $folder.Name
+                        }
+                    }
+                }
+            }
+            
+            $previewData.EmptyFoldersToDelete = $foldersToDelete
+            $previewData.Warnings += "削除のみモード: $($foldersToDelete.Count) 個のフォルダが削除されます"
+            
+            Write-Log "削除のみモード: $($foldersToDelete.Count) 個のフォルダを削除予定" -Level SUCCESS
             return $previewData
         }
         
@@ -342,6 +359,73 @@ function Test-WillBeEmptyAfterMove {
 # 実行機能
 # ================================================================================
 
+function Move-MultipleLayers {
+    <#
+    .SYNOPSIS
+        複数階層のフォルダを移動する（モード対応）
+    #>
+    param(
+        [Parameter(Mandatory=$true)]
+        [object]$PreviewData,
+        
+        [Parameter(Mandatory=$true)]
+        [string]$RootPath,
+        
+        [string]$OperationMode = "MoveAndDeleteAll"
+    )
+    
+    Write-Log "複数階層の移動を開始: モード=$OperationMode"
+    
+    if ($OperationMode -eq "DeleteOnly") {
+        Write-Log "削除のみモード: 移動をスキップ"
+        return @{ Success = 0; Error = 0 }
+    }
+    
+    if ($PreviewData.MoveOperations.Count -eq 0) {
+        Write-Log "移動対象のフォルダがありません"
+        return @{ Success = 0; Error = 0 }
+    }
+    
+    # Move-FoldersToRootを呼び出し
+    return Move-FoldersToRoot -MoveOperations $PreviewData.MoveOperations -RootPath $RootPath
+}
+
+function Remove-SelectedLayers {
+    <#
+    .SYNOPSIS
+        選択した階層のフォルダを削除する（削除のみモード用）
+    #>
+    param(
+        [Parameter(Mandatory=$true)]
+        [array]$FoldersToDelete
+    )
+    
+    Write-Log "選択階層のフォルダ削除を開始: $($FoldersToDelete.Count) 個"
+    
+    $deletedCount = 0
+    $errorCount = 0
+    
+    foreach ($folder in $FoldersToDelete) {
+        try {
+            if (Test-Path -LiteralPath $folder.Path) {
+                Remove-Item -LiteralPath $folder.Path -Recurse -Force -ErrorAction Stop
+                Write-Log "削除: $($folder.Path)" -Level SUCCESS
+                $deletedCount++
+            }
+            else {
+                Write-Log "スキップ（存在しない）: $($folder.Path)" -Level WARNING
+            }
+        }
+        catch {
+            Write-Log "削除失敗: $($folder.Path) - $_" -Level ERROR
+            $errorCount++
+        }
+    }
+    
+    Write-Log "選択階層削除完了: 成功 $deletedCount 個、失敗 $errorCount 個" -Level SUCCESS
+    return $deletedCount
+}
+
 function Move-FoldersToRoot {
     <#
     .SYNOPSIS
@@ -387,14 +471,24 @@ function Move-FoldersToRoot {
 function Remove-EmptyFolders {
     <#
     .SYNOPSIS
-        空のフォルダを再帰的に削除する
+        空のフォルダを再帰的に削除する（モード対応）
     #>
     param(
         [Parameter(Mandatory=$true)]
-        [string]$RootPath
+        [string]$RootPath,
+        
+        [string]$DeleteRange = "AllEmpty",
+        
+        [array]$SelectedLevels = @()
     )
     
-    Write-Log "空フォルダの削除を開始"
+    Write-Log "空フォルダの削除を開始: 削除範囲=$DeleteRange"
+    
+    # NoDeleteモードの場合はスキップ
+    if ($DeleteRange -eq "NoDelete") {
+        Write-Log "削除しない設定: スキップ"
+        return 0
+    }
     
     $deletedCount = 0
     
@@ -633,7 +727,7 @@ function Update-SelectedLayers {
 function Update-PreviewDisplay {
     <#
     .SYNOPSIS
-        プレビュー結果をUIに表示する
+        プレビュー結果をUIに表示する（複数階層・モード対応）
     #>
     param(
         [Parameter(Mandatory=$true)]
@@ -648,33 +742,86 @@ function Update-PreviewDisplay {
     
     $moveCount = $PreviewData.MoveOperations.Count
     $deleteCount = $PreviewData.EmptyFoldersToDelete.Count
+    $operationMode = $PreviewData.OperationMode
     
-    $txtPreviewMoveCount.Text = "移動されるフォルダ数: $moveCount"
-    $txtPreviewDeleteCount.Text = "削除される空フォルダ数: $deleteCount"
-    $txtPreviewStatus.Text = "プレビュー更新完了"
+    # モードに応じた表示
+    switch ($operationMode) {
+        "DeleteOnly" {
+            $txtPreviewMoveCount.Text = "削除されるフォルダ数: $deleteCount"
+            $txtPreviewDeleteCount.Text = "移動: なし（削除のみモード）"
+        }
+        "MoveOnly" {
+            $txtPreviewMoveCount.Text = "移動されるフォルダ数: $moveCount"
+            $txtPreviewDeleteCount.Text = "削除: なし（移動のみモード）"
+        }
+        default {
+            $txtPreviewMoveCount.Text = "移動されるフォルダ数: $moveCount"
+            $txtPreviewDeleteCount.Text = "削除される空フォルダ数: $deleteCount"
+        }
+    }
+    
+    $txtPreviewStatus.Text = "プレビュー更新完了 (モード: $operationMode)"
     
     # 詳細表示
     $details = @()
     $details += "=" * 80
-    $details += "移動予定のフォルダ ($moveCount 個)"
+    $details += "操作モード: $operationMode"
+    $details += "選択階層: " + ($script:SelectedLayers -join ", ")
     $details += "=" * 80
+    $details += ""
     
-    foreach ($moveOp in $PreviewData.MoveOperations) {
-        if ($moveOp.WasRenamed) {
-            $details += "[名前変更] $($moveOp.OriginalName) → $($moveOp.DestinationName)"
-        } else {
-            $details += "$($moveOp.DestinationName)"
+    # 移動予定の表示
+    if ($moveCount -gt 0) {
+        $details += "=" * 80
+        $details += "移動予定のフォルダ ($moveCount 個)"
+        $details += "=" * 80
+        
+        # 階層ごとにグループ化
+        $byLevel = @{}
+        foreach ($moveOp in $PreviewData.MoveOperations) {
+            # 元のパスから階層を判定
+            $depth = ($moveOp.SourcePath.Replace($script:RootPath, "").TrimStart('\').Split('\').Count) - 1
+            if (-not $byLevel.ContainsKey($depth)) {
+                $byLevel[$depth] = @()
+            }
+            $byLevel[$depth] += $moveOp
+        }
+        
+        foreach ($level in ($byLevel.Keys | Sort-Object)) {
+            $details += ""
+            $details += "[階層 $level] $($byLevel[$level].Count) 個"
+            foreach ($moveOp in $byLevel[$level]) {
+                if ($moveOp.WasRenamed) {
+                    $details += "  [名前変更] $($moveOp.OriginalName) → $($moveOp.DestinationName)"
+                } else {
+                    $details += "  $($moveOp.DestinationName)"
+                }
+            }
         }
     }
     
-    $details += ""
-    $details += "=" * 80
-    $details += "削除予定の空フォルダ ($deleteCount 個)"
-    $details += "=" * 80
-    
-    foreach ($folder in $PreviewData.EmptyFoldersToDelete) {
-        $relativePath = $folder.Replace($script:RootPath, "").TrimStart('\')
-        $details += $relativePath
+    # 削除予定の表示
+    if ($deleteCount -gt 0) {
+        $details += ""
+        $details += "=" * 80
+        
+        if ($operationMode -eq "DeleteOnly") {
+            $details += "削除予定のフォルダ ($deleteCount 個)"
+        } else {
+            $details += "削除予定の空フォルダ ($deleteCount 個)"
+        }
+        
+        $details += "=" * 80
+        
+        foreach ($folder in $PreviewData.EmptyFoldersToDelete) {
+            if ($folder -is [hashtable]) {
+                $details += "  [階層 $($folder.Level)] $($folder.Name)"
+            }
+            else {
+                $relativePath = $folder.Replace($script:RootPath, "").TrimStart('\')
+                $details += "  $relativePath"
+            }
+        }
     }
     
     if ($PreviewData.Warnings.Count -gt 0) {
@@ -906,18 +1053,37 @@ try {
     # 実行ボタン
     $btnExecute.Add_Click({
         try {
-            if (-not $script:PreviewData -or $script:PreviewData.MoveOperations.Count -eq 0) {
+            if (-not $script:PreviewData) {
                 [System.Windows.MessageBox]::Show("プレビューを更新してください。", "確認", "OK", "Warning")
                 return
             }
             
-            # 確認ダイアログ
+            # モードに応じた確認メッセージ
             $moveCount = $script:PreviewData.MoveOperations.Count
             $deleteCount = $script:PreviewData.EmptyFoldersToDelete.Count
-            $message = "以下の操作を実行します:`n`n" +
-                       "・$moveCount 個のフォルダをルート直下に移動`n" +
-                       "・$deleteCount 個の空フォルダを削除`n`n" +
-                       "実行してもよろしいですか？"
+            
+            $message = "以下の操作を実行します:`n`n"
+            
+            switch ($script:OperationMode) {
+                "MoveAndDeleteAll" {
+                    $message += "・$moveCount 個のフォルダをルート直下に移動`n"
+                    $message += "・すべての空フォルダを削除`n"
+                }
+                "MoveOnly" {
+                    $message += "・$moveCount 個のフォルダをルート直下に移動`n"
+                    $message += "・空フォルダは削除しません`n"
+                }
+                "DeleteOnly" {
+                    $message += "・$deleteCount 個のフォルダを削除`n"
+                    $message += "・移動は行いません`n"
+                }
+                "Custom" {
+                    $message += "・$moveCount 個のフォルダをルート直下に移動`n"
+                    $message += "・削除範囲: $script:DeleteRange`n"
+                }
+            }
+            
+            $message += "`n実行してもよろしいですか？"
             
             $result = [System.Windows.MessageBox]::Show($message, "実行確認", "YesNo", "Question")
             
@@ -947,24 +1113,45 @@ try {
                 $btnUndo.IsEnabled = $true
             }
             
-            # フォルダ移動実行
-            $txtExecutionStatus.Text = "フォルダを移動中..."
-            $moveResult = Move-FoldersToRoot -MoveOperations $script:PreviewData.MoveOperations -RootPath $script:RootPath
+            # モードに応じた処理実行
+            $moveResult = @{ Success = 0; Error = 0 }
+            $deleteCount = 0
             
-            # 空フォルダ削除
-            $txtExecutionStatus.Text = "空フォルダを削除中..."
-            $deleteCount = Remove-EmptyFolders -RootPath $script:RootPath
+            if ($script:OperationMode -eq "DeleteOnly") {
+                # 削除のみモード
+                $txtExecutionStatus.Text = "フォルダを削除中..."
+                $deleteCount = Remove-SelectedLayers -FoldersToDelete $script:PreviewData.EmptyFoldersToDelete
+                $txtExecutionStatus.Text = "完了: $deleteCount 個削除"
+            }
+            else {
+                # フォルダ移動実行
+                $txtExecutionStatus.Text = "フォルダを移動中..."
+                $moveResult = Move-MultipleLayers -PreviewData $script:PreviewData -RootPath $script:RootPath -OperationMode $script:OperationMode
+                
+                # 空フォルダ削除（モードに応じて）
+                if ($script:OperationMode -ne "MoveOnly") {
+                    $txtExecutionStatus.Text = "空フォルダを削除中..."
+                    $deleteCount = Remove-EmptyFolders -RootPath $script:RootPath -DeleteRange $script:DeleteRange -SelectedLevels $script:SelectedLayers
+                }
+                
+                $txtExecutionStatus.Text = "完了: $($moveResult.Success) 個移動、$deleteCount 個削除"
+            }
             
-            # 完了
-            $txtExecutionStatus.Text = "完了: $($moveResult.Success) 個移動、$deleteCount 個削除"
             $txtExecutionStatus.Foreground = "Green"
             $txtStatusBar.Text = "処理完了"
             
             Write-Log "処理完了" -Level SUCCESS
             
-            $message = "処理が完了しました。`n`n" +
-                       "移動: $($moveResult.Success) 個 (失敗: $($moveResult.Error) 個)`n" +
-                       "削除: $deleteCount 個の空フォルダ"
+            # 結果メッセージ
+            $message = "処理が完了しました。`n`n"
+            
+            if ($script:OperationMode -eq "DeleteOnly") {
+                $message += "削除: $deleteCount 個のフォルダ"
+            }
+            else {
+                $message += "移動: $($moveResult.Success) 個 (失敗: $($moveResult.Error) 個)`n"
+                $message += "削除: $deleteCount 個の空フォルダ"
+            }
             
             [System.Windows.MessageBox]::Show($message, "完了", "OK", "Information")
         }
