@@ -22,9 +22,11 @@ $script:HierarchyData = @{}              # 階層構造データ
 $script:SelectedLayers = @()             # 選択された階層（複数）
 $script:OperationMode = "MoveAndDeleteAll"  # 操作モード
 $script:DeleteRange = "AllEmpty"         # 削除範囲
+$script:MoveDestination = "Root"         # 移動先（Root or Parent）
 $script:PreviewData = $null              # プレビューデータ
 $script:LastBackupPath = ""              # 最後に作成したバックアップのパス
 $script:LogFilePath = ""                 # ログファイルのパス
+$script:AutoPreviewEnabled = $false      # 自動プレビュー更新が有効か
 
 # ================================================================================
 # ログ機能
@@ -171,6 +173,9 @@ function Get-PreviewData {
     
     .PARAMETER DeleteRange
         削除範囲
+    
+    .PARAMETER MoveDestination
+        移動先（Root or Parent）
     #>
     param(
         [Parameter(Mandatory=$true)]
@@ -184,7 +189,9 @@ function Get-PreviewData {
         
         [string]$OperationMode = "MoveAndDeleteAll",
         
-        [string]$DeleteRange = "AllEmpty"
+        [string]$DeleteRange = "AllEmpty",
+        
+        [string]$MoveDestination = "Root"
     )
     
     $levelList = $TargetLevels -join ", "
@@ -240,45 +247,99 @@ function Get-PreviewData {
         
         $targetFolders = $allTargetFolders
         
-        # ルート直下の既存フォルダ名を取得
-        $existingNames = @{}
-        Get-ChildItem -LiteralPath $RootPath -Directory | ForEach-Object {
-            $existingNames[$_.Name.ToLower()] = $true
+        # 移動先に応じた処理
+        if ($MoveDestination -eq "Parent") {
+            # 1階層上に移動
+            Write-Log "移動先: 1階層上"
+            
+            foreach ($folder in $targetFolders) {
+                $originalName = $folder.Name
+                $currentParent = Split-Path $folder.FullPath -Parent
+                
+                # 親の親（1階層上）を取得
+                $targetParent = Split-Path $currentParent -Parent
+                
+                # ルート直下の場合はスキップ
+                if (-not $targetParent -or $targetParent -eq $RootPath) {
+                    $previewData.Warnings += "スキップ: '$originalName' は既に最上位階層です"
+                    continue
+                }
+                
+                # 移動先の既存フォルダ名を取得
+                $existingInTarget = @{}
+                Get-ChildItem -LiteralPath $targetParent -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+                    $existingInTarget[$_.Name.ToLower()] = $true
+                }
+                
+                # 同名チェック
+                $finalName = $originalName
+                $counter = 1
+                while ($existingInTarget.ContainsKey($finalName.ToLower())) {
+                    $finalName = "${originalName}_$counter"
+                    $counter++
+                }
+                
+                # 移動操作を記録
+                $moveOp = @{
+                    SourcePath = $folder.FullPath
+                    DestinationName = $finalName
+                    DestinationPath = Join-Path $targetParent $finalName
+                    OriginalName = $originalName
+                    WasRenamed = ($finalName -ne $originalName)
+                    TargetParent = $targetParent
+                }
+                
+                $previewData.MoveOperations += $moveOp
+                
+                if ($moveOp.WasRenamed) {
+                    $previewData.Warnings += "名前変更: '$originalName' → '$finalName'"
+                }
+            }
         }
-        
-        foreach ($folder in $targetFolders) {
-            $originalName = $folder.Name
-            $newName = $originalName
+        else {
+            # ルート直下に移動（デフォルト）
+            Write-Log "移動先: ルート直下"
             
-            # 親パスがある場合（ルート直下でない場合）
-            if ($folder.Parent) {
-                # 親パスをプレフィックスとして追加
-                $parentPrefix = $folder.Parent -replace '\\', '_'
-                $newName = "${parentPrefix}_${originalName}"
+            # ルート直下の既存フォルダ名を取得
+            $existingNames = @{}
+            Get-ChildItem -LiteralPath $RootPath -Directory | ForEach-Object {
+                $existingNames[$_.Name.ToLower()] = $true
             }
             
-            # 同名チェック
-            $finalName = $newName
-            $counter = 1
-            while ($existingNames.ContainsKey($finalName.ToLower())) {
-                $finalName = "${newName}_$counter"
-                $counter++
-            }
-            
-            # 移動操作を記録
-            $moveOp = @{
-                SourcePath = $folder.FullPath
-                DestinationName = $finalName
-                DestinationPath = Join-Path $RootPath $finalName
-                OriginalName = $originalName
-                WasRenamed = ($finalName -ne $originalName)
-            }
-            
-            $previewData.MoveOperations += $moveOp
-            $existingNames[$finalName.ToLower()] = $true
-            
-            if ($moveOp.WasRenamed) {
-                $previewData.Warnings += "名前変更: '$originalName' → '$finalName'"
+            foreach ($folder in $targetFolders) {
+                $originalName = $folder.Name
+                $newName = $originalName
+                
+                # 親パスがある場合（ルート直下でない場合）
+                if ($folder.Parent) {
+                    # 親パスをプレフィックスとして追加
+                    $parentPrefix = $folder.Parent -replace '\\', '_'
+                    $newName = "${parentPrefix}_${originalName}"
+                }
+                
+                # 同名チェック
+                $finalName = $newName
+                $counter = 1
+                while ($existingNames.ContainsKey($finalName.ToLower())) {
+                    $finalName = "${newName}_$counter"
+                    $counter++
+                }
+                
+                # 移動操作を記録
+                $moveOp = @{
+                    SourcePath = $folder.FullPath
+                    DestinationName = $finalName
+                    DestinationPath = Join-Path $RootPath $finalName
+                    OriginalName = $originalName
+                    WasRenamed = ($finalName -ne $originalName)
+                }
+                
+                $previewData.MoveOperations += $moveOp
+                $existingNames[$finalName.ToLower()] = $true
+                
+                if ($moveOp.WasRenamed) {
+                    $previewData.Warnings += "名前変更: '$originalName' → '$finalName'"
+                }
             }
         }
         
@@ -716,10 +777,43 @@ function Update-SelectedLayers {
         $btnUpdatePreview.IsEnabled = $true
         $layerList = $script:SelectedLayers -join ", "
         $txtStatusBar.Text = "階層 $layerList を選択しました（$($script:SelectedLayers.Count) 個）"
+        
+        # 自動プレビュー更新
+        if ($script:AutoPreviewEnabled) {
+            Invoke-AutoPreviewUpdate
+        }
     }
     else {
         $btnUpdatePreview.IsEnabled = $false
         $txtStatusBar.Text = "階層を選択してください"
+    }
+}
+
+function Invoke-AutoPreviewUpdate {
+    <#
+    .SYNOPSIS
+        自動的にプレビューを更新する
+    #>
+    if ($script:SelectedLayers.Count -eq 0 -or -not $script:HierarchyData -or $script:HierarchyData.Count -eq 0) {
+        return
+    }
+    
+    try {
+        # プレビューデータ生成
+        $script:PreviewData = Get-PreviewData `
+            -HierarchyData $script:HierarchyData `
+            -TargetLevels $script:SelectedLayers `
+            -RootPath $script:RootPath `
+            -OperationMode $script:OperationMode `
+            -DeleteRange $script:DeleteRange `
+            -MoveDestination $script:MoveDestination
+        
+        if ($script:PreviewData) {
+            Update-PreviewDisplay -PreviewData $script:PreviewData
+        }
+    }
+    catch {
+        Write-Log "自動プレビュー更新エラー: $_" -Level ERROR
     }
 }
 
@@ -908,6 +1002,11 @@ try {
     $rdoDeleteSelectedOnly = $window.FindName("rdoDeleteSelectedOnly")
     $rdoNoDelete = $window.FindName("rdoNoDelete")
     
+    # 移動先選択
+    $pnlMoveDestination = $window.FindName("pnlMoveDestination")
+    $rdoMoveToRoot = $window.FindName("rdoMoveToRoot")
+    $rdoMoveToParent = $window.FindName("rdoMoveToParent")
+    
     # その他
     $btnUpdatePreview = $window.FindName("btnUpdatePreview")
     $btnExecute = $window.FindName("btnExecute")
@@ -924,16 +1023,20 @@ try {
     # 操作モード変更イベント
     $rdoMoveAndDeleteAll.Add_Checked({
         $script:OperationMode = "MoveAndDeleteAll"
-        $txtModeDescription.Text = "選択した階層のフォルダをルート直下に移動し、すべての空フォルダを削除します。"
+        $txtModeDescription.Text = "選択した階層のフォルダを移動し、すべての空フォルダを削除します。"
         $lblMoveLayersTitle.Text = "移動する階層を選択（複数可）:"
         $pnlDeleteOptions.Visibility = "Collapsed"
+        $pnlMoveDestination.Visibility = "Visible"
+        if ($script:AutoPreviewEnabled) { Invoke-AutoPreviewUpdate }
     })
     
     $rdoMoveOnly.Add_Checked({
         $script:OperationMode = "MoveOnly"
-        $txtModeDescription.Text = "選択した階層のフォルダをルート直下に移動します。空フォルダは削除しません。"
+        $txtModeDescription.Text = "選択した階層のフォルダを移動します。空フォルダは削除しません。"
         $lblMoveLayersTitle.Text = "移動する階層を選択（複数可）:"
         $pnlDeleteOptions.Visibility = "Collapsed"
+        $pnlMoveDestination.Visibility = "Visible"
+        if ($script:AutoPreviewEnabled) { Invoke-AutoPreviewUpdate }
     })
     
     $rdoDeleteOnly.Add_Checked({
@@ -941,6 +1044,8 @@ try {
         $txtModeDescription.Text = "選択した階層のフォルダを削除します。移動は行いません。"
         $lblMoveLayersTitle.Text = "削除する階層を選択（複数可）:"
         $pnlDeleteOptions.Visibility = "Collapsed"
+        $pnlMoveDestination.Visibility = "Collapsed"
+        if ($script:AutoPreviewEnabled) { Invoke-AutoPreviewUpdate }
     })
     
     $rdoCustom.Add_Checked({
@@ -948,19 +1053,35 @@ try {
         $txtModeDescription.Text = "移動と削除を個別に設定できます。"
         $lblMoveLayersTitle.Text = "移動する階層を選択（複数可）:"
         $pnlDeleteOptions.Visibility = "Visible"
+        $pnlMoveDestination.Visibility = "Visible"
+        if ($script:AutoPreviewEnabled) { Invoke-AutoPreviewUpdate }
     })
     
     # 削除範囲オプション
     $rdoDeleteAllEmpty.Add_Checked({
         $script:DeleteRange = "AllEmpty"
+        if ($script:AutoPreviewEnabled) { Invoke-AutoPreviewUpdate }
     })
     
     $rdoDeleteSelectedOnly.Add_Checked({
         $script:DeleteRange = "SelectedOnly"
+        if ($script:AutoPreviewEnabled) { Invoke-AutoPreviewUpdate }
     })
     
     $rdoNoDelete.Add_Checked({
         $script:DeleteRange = "NoDelete"
+        if ($script:AutoPreviewEnabled) { Invoke-AutoPreviewUpdate }
+    })
+    
+    # 移動先選択イベント
+    $rdoMoveToRoot.Add_Checked({
+        $script:MoveDestination = "Root"
+        if ($script:AutoPreviewEnabled) { Invoke-AutoPreviewUpdate }
+    })
+    
+    $rdoMoveToParent.Add_Checked({
+        $script:MoveDestination = "Parent"
+        if ($script:AutoPreviewEnabled) { Invoke-AutoPreviewUpdate }
     })
     
     # 参照ボタン
@@ -1004,6 +1125,9 @@ try {
             $pnlMoveLayerSelection = $window.FindName("pnlMoveLayerSelection")
             Show-LayerAnalysis -HierarchyData $script:HierarchyData -Panel $pnlMoveLayerSelection
             
+            # 自動プレビュー更新を有効化
+            $script:AutoPreviewEnabled = $true
+            
             Write-Log "階層分析完了: $maxLevel 階層" -Level SUCCESS
         }
         catch {
@@ -1031,7 +1155,8 @@ try {
                 -TargetLevels $script:SelectedLayers `
                 -RootPath $script:RootPath `
                 -OperationMode $script:OperationMode `
-                -DeleteRange $script:DeleteRange
+                -DeleteRange $script:DeleteRange `
+                -MoveDestination $script:MoveDestination
             
             if ($script:PreviewData) {
                 Update-PreviewDisplay -PreviewData $script:PreviewData

@@ -70,13 +70,22 @@
                     <!-- 左側: 移動する階層 -->
                     <StackPanel Grid.Column="0" Margin="0,0,5,0">
                         <TextBlock Name="lblMoveLayersTitle" Text="移動する階層を選択（複数可）:" FontWeight="Bold" Margin="0,0,0,5"/>
-                        <Border BorderBrush="LightGray" BorderThickness="1" Padding="5" Background="White">
+                        <Border BorderBrush="LightGray" BorderThickness="1" Padding="5" Background="White" MinHeight="120">
                             <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="150">
                                 <StackPanel Name="pnlMoveLayerSelection">
                                     <TextBlock Text="（分析後に表示されます）" Foreground="Gray"/>
                                 </StackPanel>
                             </ScrollViewer>
                         </Border>
+                        
+                        <!-- 移動先選択 -->
+                        <StackPanel Name="pnlMoveDestination" Margin="0,10,0,0" Visibility="Collapsed">
+                            <TextBlock Text="移動先:" FontWeight="Bold" Margin="0,0,0,5"/>
+                            <RadioButton Name="rdoMoveToRoot" Content="ルート直下に移動" GroupName="MoveDestination" 
+                                         IsChecked="True" Margin="5,0,0,3"/>
+                            <RadioButton Name="rdoMoveToParent" Content="1階層上に移動" GroupName="MoveDestination" 
+                                         Margin="5,0,0,0"/>
+                        </StackPanel>
                     </StackPanel>
                     
                     <!-- 右側: 削除オプション（カスタムモード時のみ） -->
