@@ -228,8 +228,9 @@ function Export-AnalysisToText {
             $output += Build-FolderTree -FolderPath $folder.FullName -Prefix "" -IsLast $false -Level 1
         }
         
-        # ファイルに出力
-        $output | Out-File -FilePath $OutputPath -Encoding UTF8
+        # ファイルに出力（BOM付きUTF-8）
+        $utf8WithBom = New-Object System.Text.UTF8Encoding $true
+        [System.IO.File]::WriteAllLines($OutputPath, $output, $utf8WithBom)
         
         Write-Log "テキストエクスポート完了: $OutputPath" -Level SUCCESS
         return $true
@@ -380,8 +381,10 @@ function Export-AnalysisToCSV {
             }
         }
         
-        # CSVに出力
-        $csvData | Export-Csv -Path $OutputPath -NoTypeInformation -Encoding UTF8
+        # CSVに出力（BOM付きUTF-8でExcel対応）
+        $csvContent = $csvData | ConvertTo-Csv -NoTypeInformation
+        $utf8WithBom = New-Object System.Text.UTF8Encoding $true
+        [System.IO.File]::WriteAllLines($OutputPath, $csvContent, $utf8WithBom)
         
         Write-Log "CSVエクスポート完了: $OutputPath" -Level SUCCESS
         return $true
