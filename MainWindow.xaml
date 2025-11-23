@@ -34,52 +34,102 @@
             </StackPanel>
         </GroupBox>
 
-        <!-- セクション3: 階層選択とプレビュー -->
-        <GroupBox Header="階層選択とプレビュー" Grid.Row="2" Margin="0,0,0,10" Padding="10">
+        <!-- セクション3: 操作設定と階層選択 -->
+        <GroupBox Header="操作設定" Grid.Row="2" Margin="0,0,0,10" Padding="10">
             <Grid>
                 <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
                 
-                <Grid Grid.Row="0">
+                <!-- 操作モード選択 -->
+                <StackPanel Grid.Row="0" Margin="0,0,0,10">
+                    <TextBlock Text="操作モード:" FontWeight="Bold" Margin="0,0,0,5"/>
+                    <StackPanel Orientation="Horizontal" Margin="10,0,0,0">
+                        <RadioButton Name="rdoMoveAndDeleteAll" Content="移動＋空フォルダ全削除" GroupName="OperationMode" 
+                                     IsChecked="True" Margin="0,0,15,0" VerticalAlignment="Center"/>
+                        <RadioButton Name="rdoMoveOnly" Content="移動のみ" GroupName="OperationMode" 
+                                     Margin="0,0,15,0" VerticalAlignment="Center"/>
+                        <RadioButton Name="rdoDeleteOnly" Content="削除のみ" GroupName="OperationMode" 
+                                     Margin="0,0,15,0" VerticalAlignment="Center"/>
+                        <RadioButton Name="rdoCustom" Content="カスタム" GroupName="OperationMode" 
+                                     VerticalAlignment="Center"/>
+                    </StackPanel>
+                    <TextBlock Name="txtModeDescription" Text="選択した階層のフォルダをルート直下に移動し、すべての空フォルダを削除します。" 
+                               Foreground="Gray" FontSize="10" Margin="10,5,0,0"/>
+                </StackPanel>
+                
+                <!-- 階層選択エリア -->
+                <Grid Grid.Row="1" Margin="0,0,0,10">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
                     
-                    <!-- 左側: 階層選択 -->
-                    <StackPanel Grid.Column="0" Margin="0,0,10,0">
-                        <TextBlock Text="移動する階層を選択:" FontWeight="Bold" Margin="0,0,0,10"/>
-                        <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="200">
-                            <StackPanel Name="pnlLayerSelection">
-                                <TextBlock Text="（分析後に表示されます）" Foreground="Gray"/>
-                            </StackPanel>
-                        </ScrollViewer>
-                        <Button Name="btnUpdatePreview" Content="プレビュー更新" Width="120" Height="30" 
-                                Margin="0,10,0,0" HorizontalAlignment="Left" IsEnabled="False"/>
+                    <!-- 左側: 移動する階層 -->
+                    <StackPanel Grid.Column="0" Margin="0,0,5,0">
+                        <TextBlock Name="lblMoveLayersTitle" Text="移動する階層を選択（複数可）:" FontWeight="Bold" Margin="0,0,0,5"/>
+                        <Border BorderBrush="LightGray" BorderThickness="1" Padding="5" Background="White">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="150">
+                                <StackPanel Name="pnlMoveLayerSelection">
+                                    <TextBlock Text="（分析後に表示されます）" Foreground="Gray"/>
+                                </StackPanel>
+                            </ScrollViewer>
+                        </Border>
                     </StackPanel>
                     
-                    <!-- 右側: プレビュー結果 -->
-                    <StackPanel Grid.Column="1">
-                        <TextBlock Text="実行後の予測:" FontWeight="Bold" Margin="0,0,0,10"/>
-                        <Border BorderBrush="LightGray" BorderThickness="1" Padding="10" Background="#F5F5F5">
+                    <!-- 右側: 削除オプション（カスタムモード時のみ） -->
+                    <StackPanel Grid.Column="1" Name="pnlDeleteOptions" Margin="5,0,0,0" Visibility="Collapsed">
+                        <TextBlock Text="削除オプション:" FontWeight="Bold" Margin="0,0,0,5"/>
+                        <Border BorderBrush="LightGray" BorderThickness="1" Padding="5" Background="White">
                             <StackPanel>
-                                <TextBlock Name="txtPreviewMoveCount" Text="移動されるフォルダ数: -" Margin="0,0,0,5"/>
-                                <TextBlock Name="txtPreviewDeleteCount" Text="削除される空フォルダ数: -" Margin="0,0,0,5"/>
-                                <TextBlock Name="txtPreviewStatus" Text="プレビューを更新してください。" 
-                                           Foreground="Gray" FontStyle="Italic" Margin="0,5,0,0"/>
+                                <TextBlock Text="空フォルダの削除範囲:" FontSize="11" Margin="0,0,0,5"/>
+                                <RadioButton Name="rdoDeleteAllEmpty" Content="すべての空フォルダ" GroupName="DeleteRange" 
+                                             IsChecked="True" Margin="5,0,0,3"/>
+                                <RadioButton Name="rdoDeleteSelectedOnly" Content="選択階層のみ" GroupName="DeleteRange" 
+                                             Margin="5,0,0,3"/>
+                                <RadioButton Name="rdoNoDelete" Content="削除しない" GroupName="DeleteRange" 
+                                             Margin="5,0,0,5"/>
                             </StackPanel>
                         </Border>
                     </StackPanel>
                 </Grid>
                 
-                <!-- プレビュー詳細 -->
-                <GroupBox Header="プレビュー詳細" Grid.Row="1" Margin="0,10,0,0" Padding="5">
-                    <TextBox Name="txtPreviewDetails" IsReadOnly="True" VerticalScrollBarVisibility="Auto" 
-                             HorizontalScrollBarVisibility="Auto" FontFamily="Consolas" FontSize="10"
-                             Text="プレビューを更新すると、ここに詳細が表示されます。"/>
-                </GroupBox>
+                <!-- プレビューボタンと結果表示 -->
+                <Grid Grid.Row="2">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    
+                    <Grid Grid.Row="0" Margin="0,0,0,5">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        
+                        <Button Name="btnUpdatePreview" Content="プレビュー更新" Width="120" Height="30" 
+                                Grid.Column="0" IsEnabled="False" Margin="0,0,10,0"/>
+                        
+                        <Border Grid.Column="1" BorderBrush="LightGray" BorderThickness="1" Padding="10" Background="#F5F5F5">
+                            <StackPanel>
+                                <TextBlock Text="実行後の予測:" FontWeight="Bold" Margin="0,0,0,5"/>
+                                <TextBlock Name="txtPreviewMoveCount" Text="移動されるフォルダ数: -" Margin="0,0,0,3"/>
+                                <TextBlock Name="txtPreviewDeleteCount" Text="削除される空フォルダ数: -" Margin="0,0,0,3"/>
+                                <TextBlock Name="txtPreviewStatus" Text="プレビューを更新してください。" 
+                                           Foreground="Gray" FontStyle="Italic" Margin="0,3,0,0"/>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                    
+                    <!-- プレビュー詳細 -->
+                    <GroupBox Header="プレビュー詳細" Grid.Row="1" Margin="0,5,0,0" Padding="5">
+                        <TextBox Name="txtPreviewDetails" IsReadOnly="True" VerticalScrollBarVisibility="Auto" 
+                                 HorizontalScrollBarVisibility="Auto" FontFamily="Consolas" FontSize="10"
+                                 Text="プレビューを更新すると、ここに詳細が表示されます。"/>
+                    </GroupBox>
+                </Grid>
             </Grid>
         </GroupBox>
 

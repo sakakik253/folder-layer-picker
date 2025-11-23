@@ -19,7 +19,9 @@
 
 $script:RootPath = ""                    # 対象フォルダのパス
 $script:HierarchyData = @{}              # 階層構造データ
-$script:SelectedLayer = -1               # 選択された階層
+$script:SelectedLayers = @()             # 選択された階層（複数）
+$script:OperationMode = "MoveAndDeleteAll"  # 操作モード
+$script:DeleteRange = "AllEmpty"         # 削除範囲
 $script:PreviewData = $null              # プレビューデータ
 $script:LastBackupPath = ""              # 最後に作成したバックアップのパス
 $script:LogFilePath = ""                 # ログファイルのパス
@@ -153,41 +155,73 @@ function Get-FolderHierarchy {
 function Get-PreviewData {
     <#
     .SYNOPSIS
-        移動予測データを生成する
+        移動予測データを生成する（複数階層対応）
     
     .PARAMETER HierarchyData
         階層構造データ
     
-    .PARAMETER TargetLevel
-        移動対象の階層レベル
+    .PARAMETER TargetLevels
+        移動対象の階層レベル（配列）
     
     .PARAMETER RootPath
         ルートフォルダのパス
+    
+    .PARAMETER OperationMode
+        操作モード
+    
+    .PARAMETER DeleteRange
+        削除範囲
     #>
     param(
         [Parameter(Mandatory=$true)]
         [hashtable]$HierarchyData,
         
         [Parameter(Mandatory=$true)]
-        [int]$TargetLevel,
+        [array]$TargetLevels,
         
         [Parameter(Mandatory=$true)]
-        [string]$RootPath
+        [string]$RootPath,
+        
+        [string]$OperationMode = "MoveAndDeleteAll",
+        
+        [string]$DeleteRange = "AllEmpty"
     )
     
-    Write-Log "プレビューデータを生成: 階層$TargetLevel"
+    $levelList = $TargetLevels -join ", "
+    Write-Log "プレビューデータを生成: 階層$levelList (モード: $OperationMode)"
     
     $previewData = @{
         TargetFolders = @()
         MoveOperations = @()
         EmptyFoldersToDelete = @()
         Warnings = @()
+        OperationMode = $OperationMode
     }
     
     try {
-        # 対象階層のフォルダを取得
-        if ($HierarchyData.ContainsKey($TargetLevel)) {
-            $targetFolders = $HierarchyData[$TargetLevel].Folders
+        # 削除のみモードの場合、移動操作は実行しない
+        if ($OperationMode -eq "DeleteOnly") {
+            Write-Log "削除のみモード: 移動操作はスキップ"
+            # 空フォルダの検出のみ実行
+            # （後で実装）
+            return $previewData
+        }
+        
+        # 対象階層のフォルダを取得（複数階層対応）
+        $allTargetFolders = @()
+        foreach ($targetLevel in $TargetLevels) {
+            if ($HierarchyData.ContainsKey($targetLevel)) {
+                $allTargetFolders += $HierarchyData[$targetLevel].Folders
+                Write-Log "階層$targetLevel から $($HierarchyData[$targetLevel].Count) 個のフォルダを取得"
+            }
+        }
+        
+        if ($allTargetFolders.Count -eq 0) {
+            Write-Log "対象フォルダが見つかりませんでした" -Level WARNING
+            return $previewData
+        }
+        
+        $targetFolders = $allTargetFolders
             
             # ルート直下の既存フォルダ名を取得
             $existingNames = @{}
@@ -529,7 +563,7 @@ function Show-FolderBrowserDialog {
 function Show-LayerAnalysis {
     <#
     .SYNOPSIS
-        階層分析結果をUIに表示する
+        階層分析結果をUIに表示する（チェックボックスで複数選択対応）
     #>
     param(
         [Parameter(Mandatory=$true)]
@@ -546,21 +580,53 @@ function Show-LayerAnalysis {
     foreach ($level in $sortedLevels) {
         $count = $HierarchyData[$level].Count
         
-        $radioButton = New-Object System.Windows.Controls.RadioButton
-        $radioButton.Content = "階層 $level ($count 個のフォルダ)"
-        $radioButton.GroupName = "LayerSelection"
-        $radioButton.Tag = $level
-        $radioButton.Margin = "0,0,0,5"
+        # ラジオボタンからチェックボックスに変更
+        $checkBox = New-Object System.Windows.Controls.CheckBox
+        $checkBox.Content = "階層 $level ($count 個のフォルダ)"
+        $checkBox.Tag = $level
+        $checkBox.Margin = "0,0,0,5"
         
-        # イベントハンドラー
-        $radioButton.Add_Checked({
+        # イベントハンドラー：チェック状態変更時
+        $checkBox.Add_Checked({
             param($sender, $e)
-            $script:SelectedLayer = $sender.Tag
-            $window.FindName("btnUpdatePreview").IsEnabled = $true
-            $window.FindName("txtStatusBar").Text = "階層 $($script:SelectedLayer) を選択しました"
+            Update-SelectedLayers
         })
         
-        $Panel.Children.Add($radioButton) | Out-Null
+        $checkBox.Add_Unchecked({
+            param($sender, $e)
+            Update-SelectedLayers
+        })
+        
+        $Panel.Children.Add($checkBox) | Out-Null
+    }
+}
+
+function Update-SelectedLayers {
+    <#
+    .SYNOPSIS
+        選択された階層リストを更新する
+    #>
+    $script:SelectedLayers = @()
+    
+    $panel = $window.FindName("pnlMoveLayerSelection")
+    foreach ($child in $panel.Children) {
+        if ($child -is [System.Windows.Controls.CheckBox] -and $child.IsChecked) {
+            $script:SelectedLayers += $child.Tag
+        }
+    }
+    
+    # プレビューボタンの有効/無効を切り替え
+    $btnUpdatePreview = $window.FindName("btnUpdatePreview")
+    $txtStatusBar = $window.FindName("txtStatusBar")
+    
+    if ($script:SelectedLayers.Count -gt 0) {
+        $btnUpdatePreview.IsEnabled = $true
+        $layerList = $script:SelectedLayers -join ", "
+        $txtStatusBar.Text = "階層 $layerList を選択しました（$($script:SelectedLayers.Count) 個）"
+    }
+    else {
+        $btnUpdatePreview.IsEnabled = $false
+        $txtStatusBar.Text = "階層を選択してください"
     }
 }
 
@@ -641,33 +707,62 @@ function Initialize-Application {
 
 # WPF ウィンドウの起動
 try {
+    # WPFアセンブリの読み込み（最初に実行）
+    Write-Host "WPFアセンブリを読み込んでいます..." -ForegroundColor Cyan
+    Add-Type -AssemblyName PresentationFramework -ErrorAction Stop
+    Add-Type -AssemblyName PresentationCore -ErrorAction Stop
+    Add-Type -AssemblyName WindowsBase -ErrorAction Stop
+    Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop
+    Write-Host "✓ WPFアセンブリ読み込み完了" -ForegroundColor Green
+    
     # アプリケーション初期化
     Initialize-Application
     
     # XAMLファイルの読み込み
     $xamlPath = Join-Path $PSScriptRoot "MainWindow.xaml"
+    Write-Host "XAMLファイルを読み込んでいます: $xamlPath" -ForegroundColor Cyan
     
     if (-not (Test-Path $xamlPath)) {
         throw "XAMLファイルが見つかりません: $xamlPath"
     }
     
-    [xml]$xaml = Get-Content $xamlPath -Encoding UTF8
-    
-    # WPFアセンブリの読み込み
-    Add-Type -AssemblyName PresentationFramework
-    Add-Type -AssemblyName PresentationCore
-    Add-Type -AssemblyName WindowsBase
+    [xml]$xaml = Get-Content $xamlPath -Encoding UTF8 -ErrorAction Stop
+    Write-Host "✓ XAML読み込み完了" -ForegroundColor Green
     
     # XAMLリーダーの作成
+    Write-Host "WPFウィンドウを作成しています..." -ForegroundColor Cyan
     $reader = New-Object System.Xml.XmlNodeReader $xaml
     $window = [Windows.Markup.XamlReader]::Load($reader)
+    
+    if (-not $window) {
+        throw "WPFウィンドウの作成に失敗しました"
+    }
+    Write-Host "✓ WPFウィンドウ作成完了" -ForegroundColor Green
     
     # UI要素の取得
     $txtFolderPath = $window.FindName("txtFolderPath")
     $btnBrowse = $window.FindName("btnBrowse")
     $btnAnalyze = $window.FindName("btnAnalyze")
     $txtAnalysisStatus = $window.FindName("txtAnalysisStatus")
-    $pnlLayerSelection = $window.FindName("pnlLayerSelection")
+    
+    # 操作モード関連
+    $rdoMoveAndDeleteAll = $window.FindName("rdoMoveAndDeleteAll")
+    $rdoMoveOnly = $window.FindName("rdoMoveOnly")
+    $rdoDeleteOnly = $window.FindName("rdoDeleteOnly")
+    $rdoCustom = $window.FindName("rdoCustom")
+    $txtModeDescription = $window.FindName("txtModeDescription")
+    
+    # 階層選択関連
+    $pnlMoveLayerSelection = $window.FindName("pnlMoveLayerSelection")
+    $pnlDeleteOptions = $window.FindName("pnlDeleteOptions")
+    $lblMoveLayersTitle = $window.FindName("lblMoveLayersTitle")
+    
+    # 削除オプション
+    $rdoDeleteAllEmpty = $window.FindName("rdoDeleteAllEmpty")
+    $rdoDeleteSelectedOnly = $window.FindName("rdoDeleteSelectedOnly")
+    $rdoNoDelete = $window.FindName("rdoNoDelete")
+    
+    # その他
     $btnUpdatePreview = $window.FindName("btnUpdatePreview")
     $btnExecute = $window.FindName("btnExecute")
     $btnUndo = $window.FindName("btnUndo")
@@ -679,6 +774,48 @@ try {
     # ================================================================================
     # イベントハンドラーの設定
     # ================================================================================
+    
+    # 操作モード変更イベント
+    $rdoMoveAndDeleteAll.Add_Checked({
+        $script:OperationMode = "MoveAndDeleteAll"
+        $txtModeDescription.Text = "選択した階層のフォルダをルート直下に移動し、すべての空フォルダを削除します。"
+        $lblMoveLayersTitle.Text = "移動する階層を選択（複数可）:"
+        $pnlDeleteOptions.Visibility = "Collapsed"
+    })
+    
+    $rdoMoveOnly.Add_Checked({
+        $script:OperationMode = "MoveOnly"
+        $txtModeDescription.Text = "選択した階層のフォルダをルート直下に移動します。空フォルダは削除しません。"
+        $lblMoveLayersTitle.Text = "移動する階層を選択（複数可）:"
+        $pnlDeleteOptions.Visibility = "Collapsed"
+    })
+    
+    $rdoDeleteOnly.Add_Checked({
+        $script:OperationMode = "DeleteOnly"
+        $txtModeDescription.Text = "選択した階層のフォルダを削除します。移動は行いません。"
+        $lblMoveLayersTitle.Text = "削除する階層を選択（複数可）:"
+        $pnlDeleteOptions.Visibility = "Collapsed"
+    })
+    
+    $rdoCustom.Add_Checked({
+        $script:OperationMode = "Custom"
+        $txtModeDescription.Text = "移動と削除を個別に設定できます。"
+        $lblMoveLayersTitle.Text = "移動する階層を選択（複数可）:"
+        $pnlDeleteOptions.Visibility = "Visible"
+    })
+    
+    # 削除範囲オプション
+    $rdoDeleteAllEmpty.Add_Checked({
+        $script:DeleteRange = "AllEmpty"
+    })
+    
+    $rdoDeleteSelectedOnly.Add_Checked({
+        $script:DeleteRange = "SelectedOnly"
+    })
+    
+    $rdoNoDelete.Add_Checked({
+        $script:DeleteRange = "NoDelete"
+    })
     
     # 参照ボタン
     $btnBrowse.Add_Click({
@@ -718,7 +855,8 @@ try {
             $txtStatusBar.Text = "分析完了"
             
             # 階層選択UIを更新
-            Show-LayerAnalysis -HierarchyData $script:HierarchyData -Panel $pnlLayerSelection
+            $pnlMoveLayerSelection = $window.FindName("pnlMoveLayerSelection")
+            Show-LayerAnalysis -HierarchyData $script:HierarchyData -Panel $pnlMoveLayerSelection
             
             Write-Log "階層分析完了: $maxLevel 階層" -Level SUCCESS
         }
@@ -734,15 +872,20 @@ try {
     # プレビュー更新ボタン
     $btnUpdatePreview.Add_Click({
         try {
-            if ($script:SelectedLayer -lt 0) {
+            if ($script:SelectedLayers.Count -eq 0) {
                 [System.Windows.MessageBox]::Show("階層を選択してください。", "確認", "OK", "Warning")
                 return
             }
             
             $txtStatusBar.Text = "プレビューを生成しています..."
             
-            # プレビューデータ生成
-            $script:PreviewData = Get-PreviewData -HierarchyData $script:HierarchyData -TargetLevel $script:SelectedLayer -RootPath $script:RootPath
+            # プレビューデータ生成（複数階層対応）
+            $script:PreviewData = Get-PreviewData `
+                -HierarchyData $script:HierarchyData `
+                -TargetLevels $script:SelectedLayers `
+                -RootPath $script:RootPath `
+                -OperationMode $script:OperationMode `
+                -DeleteRange $script:DeleteRange
             
             if ($script:PreviewData) {
                 Update-PreviewDisplay -PreviewData $script:PreviewData
@@ -892,12 +1035,37 @@ try {
     })
     
     # ウィンドウを表示
+    Write-Host "UIを表示します..." -ForegroundColor Cyan
     Write-Log "UIを表示します"
     $window.ShowDialog() | Out-Null
+    
+    Write-Host "アプリケーションが正常に終了しました" -ForegroundColor Green
 }
 catch {
-    Write-Host "致命的なエラー: $_" -ForegroundColor Red
-    Write-Host $_.ScriptStackTrace -ForegroundColor Red
-    Read-Host "Enterキーを押して終了してください"
+    Write-Host "`n========================================" -ForegroundColor Red
+    Write-Host "致命的なエラーが発生しました" -ForegroundColor Red
+    Write-Host "========================================" -ForegroundColor Red
+    Write-Host "`nエラー内容:" -ForegroundColor Yellow
+    Write-Host $_.Exception.Message -ForegroundColor Red
+    Write-Host "`nエラー発生箇所:" -ForegroundColor Yellow
+    Write-Host $_.InvocationInfo.PositionMessage -ForegroundColor Gray
+    
+    if ($_.Exception.InnerException) {
+        Write-Host "`n内部エラー:" -ForegroundColor Yellow
+        Write-Host $_.Exception.InnerException.Message -ForegroundColor Red
+    }
+    
+    Write-Host "`nスタックトレース:" -ForegroundColor Yellow
+    Write-Host $_.ScriptStackTrace -ForegroundColor Gray
+    
+    Write-Host "`n========================================" -ForegroundColor Red
+    Write-Host "対処方法:" -ForegroundColor Yellow
+    Write-Host "1. MainWindow.xamlが同じフォルダにあることを確認" -ForegroundColor White
+    Write-Host "2. PowerShell 5.1以降を使用していることを確認" -ForegroundColor White
+    Write-Host "3. test-startup.ps1で診断を実行" -ForegroundColor White
+    Write-Host "========================================" -ForegroundColor Red
+    
+    Read-Host "`nEnterキーを押して終了してください"
+    exit 1
 }
 
