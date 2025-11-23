@@ -112,13 +112,15 @@
                         <Button Name="btnUpdatePreview" Content="プレビュー更新" Width="120" Height="30" 
                                 Grid.Column="0" IsEnabled="False" Margin="0,0,10,0"/>
                         
-                        <Border Grid.Column="1" BorderBrush="LightGray" BorderThickness="1" Padding="10" Background="#F5F5F5">
+                        <Border Grid.Column="1" BorderBrush="LightGray" BorderThickness="1" Padding="10" Background="#F5F5F5" MinHeight="100">
                             <StackPanel>
                                 <TextBlock Text="実行後の予測:" FontWeight="Bold" Margin="0,0,0,5"/>
-                                <TextBlock Name="txtPreviewMoveCount" Text="移動されるフォルダ数: -" Margin="0,0,0,3"/>
-                                <TextBlock Name="txtPreviewDeleteCount" Text="削除される空フォルダ数: -" Margin="0,0,0,3"/>
+                                <TextBlock Name="txtPreviewMoveCount" Text="移動されるフォルダ数: -" 
+                                           Margin="0,0,0,3" TextWrapping="Wrap"/>
+                                <TextBlock Name="txtPreviewDeleteCount" Text="削除される空フォルダ数: -" 
+                                           Margin="0,0,0,3" TextWrapping="Wrap"/>
                                 <TextBlock Name="txtPreviewStatus" Text="プレビューを更新してください。" 
-                                           Foreground="Gray" FontStyle="Italic" Margin="0,3,0,0"/>
+                                           Foreground="Gray" FontStyle="Italic" Margin="0,3,0,0" TextWrapping="Wrap"/>
                             </StackPanel>
                         </Border>
                     </Grid>
