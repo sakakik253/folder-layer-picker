@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 
 <#
 .SYNOPSIS
@@ -323,19 +323,6 @@ function Export-AnalysisToCSV {
     
     try {
         $csvData = @()
-        
-        # ヘッダー
-        $csvData += [PSCustomObject]@{
-            "階層レベル" = "階層レベル"
-            "フォルダ名" = "フォルダ名"
-            "フルパス" = "フルパス"
-            "ファイル数" = "ファイル数"
-            "サブフォルダ数" = "サブフォルダ数"
-            "フォルダサイズ(MB)" = "フォルダサイズ(MB)"
-            "最終更新日時" = "最終更新日時"
-            "空フォルダ" = "空フォルダ"
-            "拡張子別ファイル数" = "拡張子別ファイル数"
-        }
         
         # 階層順にデータを構築
         $sortedLevels = $HierarchyData.Keys | Sort-Object
